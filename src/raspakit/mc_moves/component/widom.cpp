@@ -28,7 +28,7 @@ import interactions_polarization;
 import mc_moves_move_types;
 import mc_moves_cputime;
 
-double MC_Moves::WidomMove(RandomNumber& random, System& system, std::size_t selectedComponent)
+MC_Moves::WidomInsertion MC_Moves::WidomMove(RandomNumber& random, System& system, std::size_t selectedComponent)
 {
   // Set trial moleculeId to something that does not overlap with the current molecules
   std::size_t selectedMolecule = system.numberOfMolecules();
@@ -46,6 +46,29 @@ double MC_Moves::WidomMove(RandomNumber& random, System& system, std::size_t sel
   const CBMC::GrowContext growContext =
       system.makeGrowContext().withChainScheme(CBMC::ChainScheme::ConfigurationalBias);
 
+  WidomInsertion result{};
+
+  // Flexible molecules: ideal-gas reference for the intramolecular energy. An isolated molecule is grown
+  // with the intramolecular potential only; its Rosenbluth weight makes <W_IG U_intra>/<W_IG> the
+  // ideal-gas Boltzmann average. Sampled on every call, independent of the outcome of the insertion below.
+  if (!component.rigid)
+  {
+    std::optional<CBMC::GrowResult> idealGasGrowData =
+        CBMC::growNewMolecule(random, system.makeIdealGasGrowContext(), component,
+                              {.componentId = selectedComponent, .moleculeId = selectedMolecule});
+    if (idealGasGrowData)
+    {
+      result.idealGasWeight =
+          std::exp(idealGasGrowData->logRosenbluthWeight - std::log(component.idealGasRosenbluthWeight.value_or(1.0)));
+      result.idealGasIntraEnergy =
+          component.intraMolecularPotentials.computeInternalEnergies(idealGasGrowData->atoms).potentialEnergy();
+    }
+    else
+    {
+      result.idealGasWeight = 0.0;
+    }
+  }
+
   // Attempt to grow a new molecule using Configurational Bias Monte Carlo (CBMC) insertion.
   std::optional<CBMC::GrowResult> growData =
       timed(system, component, move, Move::Timing::NonEwald,
@@ -56,7 +79,7 @@ double MC_Moves::WidomMove(RandomNumber& random, System& system, std::size_t sel
             });
 
   // If molecule growth failed, terminate the move.
-  if (!growData) return 0.0;
+  if (!growData) return result;
 
   std::span<const Atom> newMolecule = std::span(growData->atoms.begin(), growData->atoms.end());
 
@@ -125,8 +148,23 @@ double MC_Moves::WidomMove(RandomNumber& random, System& system, std::size_t sel
 
   double idealGasRosenbluthWeight = component.idealGasRosenbluthWeight.value_or(1.0);
 
+  // Intermolecular energy of the selected configuration: the real-space external energy of the CBMC
+  // growth plus the same Ewald, tail and polarization differences that enter the correction factor.
+  const RunningEnergy& grown = growData->energies;
+  result.insertionEnergy = grown.externalFieldVDW + grown.frameworkMoleculeVDW + grown.moleculeMoleculeVDW +
+                           grown.externalFieldCharge + grown.frameworkMoleculeCharge + grown.moleculeMoleculeCharge +
+                           energyFourierDifference.potentialEnergy() + tailEnergyDifference.potentialEnergy() +
+                           polarizationDifference.potentialEnergy();
+
+  // Intramolecular energy of the selected configuration (constant for rigid molecules, so not needed there).
+  if (!component.rigid)
+  {
+    result.intraEnergy = component.intraMolecularPotentials.computeInternalEnergies(newMolecule).potentialEnergy();
+  }
+
   // The Rosenbluth weight enters through its exact logarithm: the raw weight of a long chain underflows
   // to zero even when the normalized sample W/W_ideal is of order one.
-  return std::exp(std::log(correctionFactorEwald) + growData->logRosenbluthWeight -
-                  std::log(idealGasRosenbluthWeight));
+  result.rosenbluthWeight =
+      std::exp(std::log(correctionFactorEwald) + growData->logRosenbluthWeight - std::log(idealGasRosenbluthWeight));
+  return result;
 }

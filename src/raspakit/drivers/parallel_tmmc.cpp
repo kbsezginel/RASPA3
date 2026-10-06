@@ -726,7 +726,7 @@ void ParallelTMMC::performWalkerCycle(std::size_t walkerId, SimulationStage stag
                                             static_cast<double>(widomWeightSums[walkerId].size())));
           if (atDecoupledLambda && currentN >= minMacrostate && currentN - minMacrostate < sampledMacrostates)
           {
-            const double weight = MC_Moves::WidomMove(rng, system, 0uz);
+            const double weight = MC_Moves::WidomMove(rng, system, 0uz).rosenbluthWeight;
             const std::size_t index = currentN - minMacrostate;
             widomWeightSums[walkerId][index] += weight;
             widomWeightSquaredSums[walkerId][index] += weight * weight;
