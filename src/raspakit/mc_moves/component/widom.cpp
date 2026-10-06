@@ -28,7 +28,7 @@ import interactions_polarization;
 import mc_moves_move_types;
 import mc_moves_cputime;
 
-double MC_Moves::WidomMove(RandomNumber& random, System& system, std::size_t selectedComponent)
+MC_Moves::WidomInsertion MC_Moves::WidomMove(RandomNumber& random, System& system, std::size_t selectedComponent)
 {
   // Set trial moleculeId to something that does not overlap with the current molecules
   std::size_t selectedMolecule = system.numberOfMolecules();
@@ -56,7 +56,7 @@ double MC_Moves::WidomMove(RandomNumber& random, System& system, std::size_t sel
             });
 
   // If molecule growth failed, terminate the move.
-  if (!growData) return 0.0;
+  if (!growData) return {};
 
   std::span<const Atom> newMolecule = std::span(growData->atoms.begin(), growData->atoms.end());
 
@@ -125,8 +125,19 @@ double MC_Moves::WidomMove(RandomNumber& random, System& system, std::size_t sel
 
   double idealGasRosenbluthWeight = component.idealGasRosenbluthWeight.value_or(1.0);
 
+  // Intermolecular energy of the selected configuration: the real-space external energy of the CBMC
+  // growth plus the same Ewald, tail and polarization differences that enter the correction factor.
+  // Intramolecular terms are left out (constant for rigid molecules; for flexible molecules they would
+  // need the ideal-gas reference).
+  const RunningEnergy& grown = growData->energies;
+  double insertionEnergy = grown.externalFieldVDW + grown.frameworkMoleculeVDW + grown.moleculeMoleculeVDW +
+                           grown.externalFieldCharge + grown.frameworkMoleculeCharge + grown.moleculeMoleculeCharge +
+                           energyFourierDifference.potentialEnergy() + tailEnergyDifference.potentialEnergy() +
+                           polarizationDifference.potentialEnergy();
+
   // The Rosenbluth weight enters through its exact logarithm: the raw weight of a long chain underflows
   // to zero even when the normalized sample W/W_ideal is of order one.
-  return std::exp(std::log(correctionFactorEwald) + growData->logRosenbluthWeight -
-                  std::log(idealGasRosenbluthWeight));
+  return {
+      std::exp(std::log(correctionFactorEwald) + growData->logRosenbluthWeight - std::log(idealGasRosenbluthWeight)),
+      insertionEnergy};
 }

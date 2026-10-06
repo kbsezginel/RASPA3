@@ -3149,13 +3149,14 @@ Move::Types MC_Moves::performRandomMoveProduction(RandomNumber& random, System& 
     }
     case Move::Types::Widom:
     {
-      double value = MC_Moves::WidomMove(random, selectedSystem, selectedComponent);
+      const MC_Moves::WidomInsertion insertion = MC_Moves::WidomMove(random, selectedSystem, selectedComponent);
+      double value = insertion.rosenbluthWeight;
 
       std::size_t N = selectedSystem.numberOfIntegerMoleculesPerComponent[selectedComponent];
       double V = selectedSystem.simulationBox.volume;
 
-      selectedSystem.components[selectedComponent].averageRosenbluthWeights.addWidomSample(currentBlock, value, N, V,
-                                                                                           selectedSystem.weight());
+      selectedSystem.components[selectedComponent].averageRosenbluthWeights.addWidomSample(
+          currentBlock, value, insertion.insertionEnergy, N, V, selectedSystem.weight());
       selectedSystem.components[selectedComponent].averageGibbsRosenbluthWeights.addWidomSample(
           currentBlock, value, N, V, selectedSystem.weight());
       break;

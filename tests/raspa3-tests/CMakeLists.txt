@@ -12,6 +12,7 @@ add_executable(unit_tests_raspa3
   mc_nvt_grids_drift.cpp
   mc_reaction_drift.cpp
   mc_semi_flexible_cbmc.cpp
+  mc_widom_enthalpy.cpp
   mc_cyclic_cbmc.cpp
   mc_u0_sanity.cpp
   mc_concerted_rotation.cpp

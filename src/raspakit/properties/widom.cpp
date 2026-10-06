@@ -203,6 +203,81 @@ std::string PropertyWidom::writeAveragesChemicalPotentialStatistics(double beta,
   return stream.str();
 }
 
+std::string PropertyWidom::writeAveragesEnthalpyStatistics(double beta, bool hasFramework, bool rigidComponent) const
+{
+  std::ostringstream stream;
+
+  std::pair<double, double> average_insertion_energy = insertionEnergyResult();
+  std::pair<double, double> average_enthalpy = enthalpyResult(beta);
+
+  // Insertions into a system that already holds adsorbate molecules sample a test molecule among them;
+  // only for an otherwise empty host is the result the enthalpy of adsorption at infinite dilution.
+  bool hostIsEmpty = chemicalPotentialTerms.averaged().idealGas == 0.0;
+
+  switch (Units::unitSystem)
+  {
+    case Units::System::RASPA:
+    {
+      std::print(stream, "    Widom insertion energy statistics (Boltzmann average <W dU>/<W>):\n");
+      std::print(stream, "    --------------------------------------------------------------------------------------------------------------------\n");
+      for (std::size_t blockIndex = 0; blockIndex < numberOfBlocks; ++blockIndex)
+      {
+        double blockAverage = insertionEnergyTransform(insertionEnergyTerms.averaged(blockIndex));
+        std::print(stream, "        Block[ {:2d}] {: .6e}\n", blockIndex, Units::EnergyToKelvin * blockAverage);
+      }
+      std::print(stream, "    --------------------------------------------------------------------------------------------------------------------\n");
+      std::print(stream, "    Average insertion energy:            {: .6e} +/- {: .6e} [K]\n",
+                 Units::EnergyToKelvin * average_insertion_energy.first,
+                 Units::EnergyToKelvin * average_insertion_energy.second);
+      std::print(stream, "    Average insertion energy:            {: .6e} +/- {: .6e} [kJ/mol]\n",
+                 Units::EnergyToKJPerMol * average_insertion_energy.first,
+                 Units::EnergyToKJPerMol * average_insertion_energy.second);
+      if (hasFramework)
+      {
+        std::print(stream, "    Enthalpy of adsorption (inf. dil.):  {: .6e} +/- {: .6e} [K]\n",
+                   Units::EnergyToKelvin * average_enthalpy.first, Units::EnergyToKelvin * average_enthalpy.second);
+        std::print(stream, "    Enthalpy of adsorption (inf. dil.):  {: .6e} +/- {: .6e} [kJ/mol]\n",
+                   Units::EnergyToKJPerMol * average_enthalpy.first, Units::EnergyToKJPerMol * average_enthalpy.second);
+        if (!hostIsEmpty)
+        {
+          std::print(stream,
+                     "    Note: adsorbate molecules are present; the enthalpy above is the energy-weighted average of a\n"
+                     "          test molecule at this loading, not the value at infinite dilution.\n");
+        }
+      }
+      if (!rigidComponent)
+      {
+        std::print(stream,
+                   "    Note: flexible component; dU contains the intermolecular energy only, the change of the\n"
+                   "          intramolecular energy relative to the ideal gas is not included.\n");
+      }
+    }
+    break;
+    case Units::System::ReducedUnits:
+    {
+      std::print(stream, "    Widom insertion energy statistics (Boltzmann average <W dU>/<W>):\n");
+      std::print(stream, "    --------------------------------------------------------------------------------------------------------------------\n");
+      for (std::size_t blockIndex = 0; blockIndex < numberOfBlocks; ++blockIndex)
+      {
+        double blockAverage = insertionEnergyTransform(insertionEnergyTerms.averaged(blockIndex));
+        std::print(stream, "        Block[ {:2d}] {: .6e}\n", blockIndex, beta * blockAverage);
+      }
+      std::print(stream, "    --------------------------------------------------------------------------------------------------------------------\n");
+      std::print(stream, "    Beta * Average insertion energy:            {: .6e} +/- {: .6e} [-]\n",
+                 beta * average_insertion_energy.first, beta * average_insertion_energy.second);
+      if (hasFramework)
+      {
+        std::print(stream, "    Beta * Enthalpy of adsorption (inf. dil.):  {: .6e} +/- {: .6e} [-]\n",
+                   beta * average_enthalpy.first, beta * average_enthalpy.second);
+      }
+    }
+    break;
+  }
+  std::print(stream, "\n\n");
+
+  return stream.str();
+}
+
 Archive<std::ofstream> &operator<<(Archive<std::ofstream> &archive, const PropertyWidom &w)
 {
   archive << w.versionNumber;
@@ -210,6 +285,7 @@ Archive<std::ofstream> &operator<<(Archive<std::ofstream> &archive, const Proper
   archive << w.numberOfBlocks;
   archive << w.rosenbluthWeight;
   archive << w.chemicalPotentialTerms;
+  archive << w.insertionEnergyTerms;
 
 #if DEBUG_ARCHIVE
   archive << static_cast<std::uint64_t>(0x6f6b6179);  // magic number 'okay' in hex
@@ -232,6 +308,15 @@ Archive<std::ifstream> &operator>>(Archive<std::ifstream> &archive, PropertyWido
   archive >> w.numberOfBlocks;
   archive >> w.rosenbluthWeight;
   archive >> w.chemicalPotentialTerms;
+  if (versionNumber >= 2)
+  {
+    archive >> w.insertionEnergyTerms;
+  }
+  else
+  {
+    // restart files written before the energy-weighted channel existed: start it empty
+    w.insertionEnergyTerms = BlockAverage<WidomEnergyTerms>(w.numberOfBlocks);
+  }
 
 #if DEBUG_ARCHIVE
   std::uint64_t magicNumber;
@@ -281,6 +366,46 @@ Archive<std::ifstream> &operator>>(Archive<std::ifstream> &archive, WidomData &l
   if (magicNumber != static_cast<std::uint64_t>(0x6f6b6179))
   {
     throw std::runtime_error(std::format("WidomData: Error in binary restart\n"));
+  }
+#endif
+
+  return archive;
+}
+
+Archive<std::ofstream> &operator<<(Archive<std::ofstream> &archive, const WidomEnergyTerms &l)
+{
+  archive << l.versionNumber;
+
+  archive << l.weight;
+  archive << l.weightedEnergy;
+
+#if DEBUG_ARCHIVE
+  archive << static_cast<std::uint64_t>(0x6f6b6179);  // magic number 'okay' in hex
+#endif
+
+  return archive;
+}
+
+Archive<std::ifstream> &operator>>(Archive<std::ifstream> &archive, WidomEnergyTerms &l)
+{
+  std::uint64_t versionNumber;
+  archive >> versionNumber;
+  if (versionNumber > l.versionNumber)
+  {
+    const std::source_location &location = std::source_location::current();
+    throw std::runtime_error(std::format("Invalid version reading 'WidomEnergyTerms' at line {} in file {}\n",
+                                         location.line(), location.file_name()));
+  }
+
+  archive >> l.weight;
+  archive >> l.weightedEnergy;
+
+#if DEBUG_ARCHIVE
+  std::uint64_t magicNumber;
+  archive >> magicNumber;
+  if (magicNumber != static_cast<std::uint64_t>(0x6f6b6179))
+  {
+    throw std::runtime_error(std::format("WidomEnergyTerms: Error in binary restart\n"));
   }
 #endif
 

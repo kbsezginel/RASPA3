@@ -1199,6 +1199,9 @@ std::string System::writeMCMoveStatistics() const
       std::print(stream, "{}",
                  component.averageRosenbluthWeights.writeAveragesChemicalPotentialStatistics(
                      beta, imposedChemicalPotential, imposedFugacity));
+      std::print(stream, "{}",
+                 component.averageRosenbluthWeights.writeAveragesEnthalpyStatistics(beta, framework.has_value(),
+                                                                                    component.rigid));
     }
 
     for (std::size_t i = 0; i != component.atoms.size(); ++i)

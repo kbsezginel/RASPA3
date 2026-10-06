@@ -616,7 +616,14 @@ EXPAND_MODULE(MODULE_NAME)
           { return Units::EnergyToKelvin * p.chemicalPotentialResult(1.0 / (Units::KB * T));}, nanobind::arg("temperature"))
        // convert result to units of Pascal
       .def("fugacity_result", [](PropertyWidom& p, double T) 
-          { return Units::PressureConversionFactor * p.fugacityResult(1.0 / (Units::KB * T));}, nanobind::arg("temperature"));
+          { return Units::PressureConversionFactor * p.fugacityResult(1.0 / (Units::KB * T));}, nanobind::arg("temperature"))
+       // convert results to units of Kelvin
+      .def("insertion_energy_result", [](PropertyWidom& p)
+          { auto [mean, error] = p.insertionEnergyResult();
+            return std::make_pair(Units::EnergyToKelvin * mean, Units::EnergyToKelvin * error); })
+      .def("enthalpy_of_adsorption_result", [](PropertyWidom& p, double T)
+          { auto [mean, error] = p.enthalpyResult(1.0 / (Units::KB * T));
+            return std::make_pair(Units::EnergyToKelvin * mean, Units::EnergyToKelvin * error); }, nanobind::arg("temperature"));
 
   nanobind::class_<PropertyGibbsWidom>(m, "PropertyGibbsWidom")
       .def("result", &PropertyGibbsWidom::result)

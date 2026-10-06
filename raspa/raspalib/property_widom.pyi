@@ -34,3 +34,27 @@ class PropertyWidom:
         ...
 
 
+
+    def insertion_energy_result(self) -> tuple[float, float]:
+        """Return the Boltzmann-weighted Widom insertion energy, <W dU>/<W>.
+
+        dU is the intermolecular energy of the inserted test molecule (intramolecular terms
+        excluded).
+
+        Returns:
+            Pair of mean and error in Kelvin.
+        """
+        ...
+
+    def enthalpy_of_adsorption_result(self, temperature: float) -> tuple[float, float]:
+        """Return the enthalpy of adsorption at infinite dilution, <W dU>/<W> - k_B T.
+
+        Valid for Widom insertions into an otherwise empty host.
+
+        Args:
+            temperature: Temperature in Kelvin.
+
+        Returns:
+            Pair of mean and error in Kelvin.
+        """
+        ...

@@ -283,7 +283,7 @@ double henryCoefficientPerCell(System& system, double temperature, double cells)
   double sum = 0.0;
   for (std::size_t insertion = 0uz; insertion < nitrogenBETHenryInsertions; ++insertion)
   {
-    sum += MC_Moves::WidomMove(rng, system, 0uz);
+    sum += MC_Moves::WidomMove(rng, system, 0uz).rosenbluthWeight;
   }
   const double averageRosenbluthWeight = sum / static_cast<double>(nitrogenBETHenryInsertions);
 
