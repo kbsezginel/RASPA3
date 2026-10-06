@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include "../test_support.hpp"
+
 import std;
 
 import archive;
@@ -130,7 +132,9 @@ TEST(MC_WIDOM_ENTHALPY, restart_round_trip)
     for (std::size_t i = 0; i < 10; ++i)
     {
       double w = 0.1 * static_cast<double>(i + 1 + block);
-      widom.addWidomSample(block, w, -3.0 + 0.2 * static_cast<double>(i), 0, 1000.0, 1.0);
+      double wIdealGas = 0.05 * static_cast<double>(2 * i + 1 + block);
+      widom.addWidomSample(block, w, -3.0 + 0.2 * static_cast<double>(i), 1.5 - 0.1 * static_cast<double>(i), wIdealGas,
+                           0.7 + 0.05 * static_cast<double>(i), 0, 1000.0, 1.0);
     }
   }
 
@@ -152,4 +156,90 @@ TEST(MC_WIDOM_ENTHALPY, restart_round_trip)
   auto [restoredMean, restoredError] = restored.insertionEnergyResult();
   EXPECT_DOUBLE_EQ(mean, restoredMean);
   EXPECT_DOUBLE_EQ(error, restoredError);
+
+  auto [intraMean, intraError] = widom.intraEnergyChangeResult();
+  auto [restoredIntraMean, restoredIntraError] = restored.intraEnergyChangeResult();
+  EXPECT_NE(intraMean, 0.0);
+  EXPECT_DOUBLE_EQ(intraMean, restoredIntraMean);
+  EXPECT_DOUBLE_EQ(intraError, restoredIntraError);
+}
+
+namespace
+{
+// TraPPE-UA n-butane (RASPA example 'butane in MFI'): flexible bonds, bend and torsion.
+constexpr std::string_view kButaneJson =
+    R"({
+  "CriticalTemperature" : 425.125,
+  "CriticalPressure" : 3796000.0,
+  "AcentricFactor" : 0.201,
+  "pseudoAtoms" :
+    [
+      ["CH3", [0.0, 0.0, 0.0]],
+      ["CH2", [0.0, 0.0, 0.0]],
+      ["CH2", [0.0, 0.0, 0.0]],
+      ["CH3", [0.0, 0.0, 0.0]]
+    ],
+  "Connectivity" : [
+    [0, 1],
+    [1, 2],
+    [2, 3]
+  ],
+  "Bonds" : [
+    [["CH3", "CH2"], "HARMONIC", [96500.0, 1.54]],
+    [["CH2", "CH2"], "HARMONIC", [96500.0, 1.54]]
+  ],
+  "Bends" : [
+    [["CH3", "CH2", "CH2"], "HARMONIC", [62500.0, 114]]
+  ],
+  "Torsions" : [
+    [["CH3", "CH2", "CH2", "CH3"], "TRAPPE", [0.0, 355.03, -68.19, 791.32]]
+  ]
+}
+)";
+}  // namespace
+
+// Flexible molecule inserted into an empty box: there is no intermolecular energy, and the inserted
+// molecule samples the same (ideal-gas) conformational distribution as the isolated reference growth,
+// so the intramolecular energy change must vanish within its error and the enthalpy must equal -k_B T.
+// The intramolecular energy itself is not trivial: the torsion and bend make <U_intra>_IG several
+// hundred Kelvin.
+TEST(MC_WIDOM_ENTHALPY, flexible_molecule_in_empty_box)
+{
+  ForceField forceField = ForceField(
+      {{"CH3", false, 15.04, 0.0, 0.0, 6, false}, {"CH2", false, 14.03, 0.0, 0.0, 6, false}},
+      {{98.0, 3.75}, {46.0, 3.95}}, ForceField::MixingRule::Lorentz_Berthelot, 12.0, 12.0, 12.0, false, false, false);
+
+  MCMoveProbabilities probabilities = MCMoveProbabilities();
+  probabilities.setProbability(Move::Types::Widom, 1.0);
+
+  TemporaryFile file("widom-enthalpy-butane.json", kButaneJson);
+  Component butane = Component(Component::Type::Adsorbate, 0, forceField, "widom-enthalpy-butane",
+                               file.stemPath().string(), 5, 21, probabilities, std::nullopt, false);
+  ASSERT_FALSE(butane.rigid);
+
+  System system = System(forceField, SimulationBox(30.0, 30.0, 30.0), false, 300.0, 1e4, 1.0, {}, {butane}, {}, {0}, 5);
+
+  MonteCarlo mc = MonteCarlo({2000, 0, 0, 0, 100000, 1000000, 100000, 100000}, {system}, 42uz, 5, false);
+  mc.run();
+
+  const System& s = mc.systems.front();
+  const PropertyWidom& widom = s.components.front().averageRosenbluthWeights;
+
+  auto [insertionEnergy, insertionEnergyError] = widom.insertionEnergyResult();
+  EXPECT_NEAR(insertionEnergy, 0.0, 1e-12);
+
+  auto [intraChange, intraChangeError] = widom.intraEnergyChangeResult();
+  intraChange *= Units::EnergyToKelvin;
+  intraChangeError *= Units::EnergyToKelvin;
+  EXPECT_TRUE(std::isfinite(intraChange));
+  EXPECT_GT(intraChangeError, 0.0);
+  EXPECT_NEAR(intraChange, 0.0, std::max(3.0 * intraChangeError, 5.0));
+
+  // the isolated-molecule reference itself is non-trivial
+  const WidomEnergyTerms terms = widom.insertionEnergyTerms.averaged();
+  double idealGasIntraEnergy = Units::EnergyToKelvin * terms.idealGasWeightedIntraEnergy / terms.idealGasWeight;
+  EXPECT_GT(idealGasIntraEnergy, 100.0);
+
+  auto [enthalpy, enthalpyError] = widom.enthalpyResult(s.beta);
+  EXPECT_NEAR(Units::EnergyToKelvin * enthalpy, intraChange - 300.0, 1e-3);
 }

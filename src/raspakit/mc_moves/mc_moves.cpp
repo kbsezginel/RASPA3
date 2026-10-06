@@ -3156,7 +3156,8 @@ Move::Types MC_Moves::performRandomMoveProduction(RandomNumber& random, System& 
       double V = selectedSystem.simulationBox.volume;
 
       selectedSystem.components[selectedComponent].averageRosenbluthWeights.addWidomSample(
-          currentBlock, value, insertion.insertionEnergy, N, V, selectedSystem.weight());
+          currentBlock, value, insertion.insertionEnergy, insertion.intraEnergy, insertion.idealGasWeight,
+          insertion.idealGasIntraEnergy, N, V, selectedSystem.weight());
       selectedSystem.components[selectedComponent].averageGibbsRosenbluthWeights.addWidomSample(
           currentBlock, value, N, V, selectedSystem.weight());
       break;

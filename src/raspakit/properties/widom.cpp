@@ -247,9 +247,13 @@ std::string PropertyWidom::writeAveragesEnthalpyStatistics(double beta, bool has
       }
       if (!rigidComponent)
       {
-        std::print(stream,
-                   "    Note: flexible component; dU contains the intermolecular energy only, the change of the\n"
-                   "          intramolecular energy relative to the ideal gas is not included.\n");
+        std::pair<double, double> intra_change = intraEnergyChangeResult();
+        std::print(stream, "    Intramolecular energy change:        {: .6e} +/- {: .6e} [K]\n",
+                   Units::EnergyToKelvin * intra_change.first, Units::EnergyToKelvin * intra_change.second);
+        std::print(stream, "    Intramolecular energy change:        {: .6e} +/- {: .6e} [kJ/mol]\n",
+                   Units::EnergyToKJPerMol * intra_change.first, Units::EnergyToKJPerMol * intra_change.second);
+        std::print(stream, "    (flexible component: <U_intra> of the inserted molecule minus that of the ideal gas;\n"
+                           "     included in the enthalpy above)\n");
       }
     }
     break;
@@ -265,6 +269,12 @@ std::string PropertyWidom::writeAveragesEnthalpyStatistics(double beta, bool has
       std::print(stream, "    --------------------------------------------------------------------------------------------------------------------\n");
       std::print(stream, "    Beta * Average insertion energy:            {: .6e} +/- {: .6e} [-]\n",
                  beta * average_insertion_energy.first, beta * average_insertion_energy.second);
+      if (!rigidComponent)
+      {
+        std::pair<double, double> intra_change = intraEnergyChangeResult();
+        std::print(stream, "    Beta * Intramolecular energy change:        {: .6e} +/- {: .6e} [-]\n",
+                   beta * intra_change.first, beta * intra_change.second);
+      }
       if (hasFramework)
       {
         std::print(stream, "    Beta * Enthalpy of adsorption (inf. dil.):  {: .6e} +/- {: .6e} [-]\n",
@@ -378,6 +388,9 @@ Archive<std::ofstream> &operator<<(Archive<std::ofstream> &archive, const WidomE
 
   archive << l.weight;
   archive << l.weightedEnergy;
+  archive << l.weightedIntraEnergy;
+  archive << l.idealGasWeight;
+  archive << l.idealGasWeightedIntraEnergy;
 
 #if DEBUG_ARCHIVE
   archive << static_cast<std::uint64_t>(0x6f6b6179);  // magic number 'okay' in hex
@@ -399,6 +412,20 @@ Archive<std::ifstream> &operator>>(Archive<std::ifstream> &archive, WidomEnergyT
 
   archive >> l.weight;
   archive >> l.weightedEnergy;
+  if (versionNumber >= 2)
+  {
+    archive >> l.weightedIntraEnergy;
+    archive >> l.idealGasWeight;
+    archive >> l.idealGasWeightedIntraEnergy;
+  }
+  else
+  {
+    // version 1 (intermolecular energy only): no intramolecular terms; a unit-free ideal-gas weight
+    // equal to the insertion weight keeps the ideal-gas ratio at zero wherever samples exist
+    l.weightedIntraEnergy = 0.0;
+    l.idealGasWeight = l.weight;
+    l.idealGasWeightedIntraEnergy = 0.0;
+  }
 
 #if DEBUG_ARCHIVE
   std::uint64_t magicNumber;

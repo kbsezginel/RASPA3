@@ -16,14 +16,19 @@ export namespace MC_Moves
  * \brief Result of a single Widom test insertion.
  *
  * 'insertionEnergy' is the intermolecular energy of the configuration selected by the CBMC growth
- * (framework, other molecules, external field, Ewald Fourier, tail and polarization; intramolecular
- * terms excluded). Weighted by 'rosenbluthWeight' it gives the Boltzmann average of the insertion
- * energy, <W dU>/<W>.
+ * (framework, other molecules, external field, Ewald Fourier, tail and polarization) and 'intraEnergy'
+ * its intramolecular energy. Weighted by 'rosenbluthWeight' they give Boltzmann averages over the
+ * inserted molecule, <W A>/<W>. For flexible components an isolated (ideal-gas) molecule is grown as
+ * well; 'idealGasWeight' and 'idealGasIntraEnergy' give the ideal-gas reference <U_intra>_IG the same
+ * way. Rigid components report intraEnergy = 0, idealGasWeight = 1, idealGasIntraEnergy = 0.
  */
 struct WidomInsertion
 {
-  double rosenbluthWeight{0.0};  ///< Rosenbluth weight normalized by the ideal-gas Rosenbluth weight.
-  double insertionEnergy{0.0};   ///< Intermolecular energy of the inserted configuration.
+  double rosenbluthWeight{0.0};     ///< Rosenbluth weight normalized by the ideal-gas Rosenbluth weight.
+  double insertionEnergy{0.0};      ///< Intermolecular energy of the inserted configuration.
+  double intraEnergy{0.0};          ///< Intramolecular energy of the inserted configuration.
+  double idealGasWeight{1.0};       ///< Rosenbluth weight of the isolated (ideal-gas) growth.
+  double idealGasIntraEnergy{0.0};  ///< Intramolecular energy of the isolated (ideal-gas) growth.
 };
 
 /**
